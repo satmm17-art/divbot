@@ -23,12 +23,6 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             text-align: center;
         }
-        iframe {
-            width: 300px;
-            height: 500px;
-            border: none;
-            margin-top: 10px;
-        }
         .status {
             margin-top: 10px;
             font-size: 14px;
@@ -90,9 +84,9 @@
         iframe.style.border = '0';
         iframeContainer.appendChild(iframe);
 
-        // Load Discord Login via CORS Proxy
+        // ✅ Use allorigins.win as a more reliable proxy for raw HTML
         const targetUrl = 'https://discord.com/login';
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
         iframe.src = proxyUrl;
 
